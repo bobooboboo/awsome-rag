@@ -21,7 +21,7 @@ load_dotenv()
 # 强制设置环境变量
 os.environ["EMBED_MODEL_TYPE"] = "aliyun"
 
-from llama_index.core.schema import TextNode
+from llama_index.core.schema import TextNode, NodeWithScore
 from app.config.config import MILVUS_CONFIG, PG_CONFIG, VECTOR_STORE_CONFIG
 from app.model.embedding_model import get_embedding_model
 
@@ -64,7 +64,7 @@ def create_test_nodes(num_nodes: int = 5) -> List[TextNode]:
     return nodes
 
 
-def print_search_results(results: List[dict], title: str = "搜索结果"):
+def print_search_results(results: List[NodeWithScore], title: str = "搜索结果"):
     """
     打印搜索结果
     
@@ -74,8 +74,8 @@ def print_search_results(results: List[dict], title: str = "搜索结果"):
     """
     logger.info(f"{title}数量: {len(results)}")
     for i, result in enumerate(results):
-        logger.info(f"结果 {i+1}: ID={result['id']}, 相似度={result['similarity']:.4f}")
-        logger.info(f"内容: {result['text'][:50]}...")
+        logger.info(f"结果 {i+1}: ID={result.id_}, 相似度={result.score:.4f}")
+        logger.info(f"内容: {result.text[:50]}...")
 
 
 def get_milvus_config() -> Dict[str, Any]:

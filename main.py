@@ -1,133 +1,245 @@
-import os
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Flask应用程序主入口
+运行示例：python main.py
+"""
+
 from flask import Flask, jsonify
-from pathlib import Path
+from flask_cors import CORS
+import logging
+import os
 
-# 创建Flask应用
-app = Flask(__name__)
+from app.api.query import init_query_routes
+from app.api.data import init_data_routes
+from app.api.integration.dify import init_dify_integration
 
-# 加载配置
-from app.config.config import DATA_DIR, VECTOR_STORE_TYPE, FULLTEXT_STORE_TYPE
-from app.config.env import check_required_env_vars
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-# 导入API
-from app.api.data import data_api, vector_retrieval
-from app.api.query import query_api
-
-# 注册蓝图
-app.register_blueprint(data_api)
-app.register_blueprint(query_api)
-
-# 创建必要的目录
-DATA_DIR.mkdir(exist_ok=True, parents=True)
-
-# 首页路由
-@app.route('/')
-def index():
-    # 检查数据库连接状态
-    db_status = "运行中" if vector_retrieval.initialized else "未连接"
-    
-    return jsonify({
-        "status": "OK",
-        "message": "RAG系统API服务运行中",
-        "database_status": db_status,
-        "endpoints": [
-            {"url": "/api/data/upload", "method": "POST", "description": "上传文档"},
-            {"url": "/api/data/documents", "method": "GET", "description": "列出所有文档"},
-            {"url": "/api/data/documents/<document_id>", "method": "DELETE", "description": "删除文档"},
-            {"url": "/api/data/query", "method": "POST", "description": "查询文档"},
-            {"url": "/api/query", "method": "POST", "description": "执行查询"},
-            {"url": "/health", "method": "GET", "description": "健康检查"},
-            {"url": "/system-info", "method": "GET", "description": "获取系统配置信息"}
-        ]
-    })
-
-# 健康检查端点
-@app.route('/health')
-def health_check():
+def create_app():
     """
-    健康检查端点，返回系统各组件的状态
+    创建Flask应用实例
+    
+    Returns:
+        Flask应用实例
     """
-    health_data = {
-        "status": "healthy",
-        "components": {
-            "api": "运行中",
-            "database": "运行中" if vector_retrieval.initialized else "未连接",
-            "file_storage": "可用" if DATA_DIR.exists() and os.access(DATA_DIR, os.W_OK) else "不可用"
-        },
-        "details": {
-            "database_message": "数据库连接正常" if vector_retrieval.initialized else "数据库连接失败，请检查配置",
-        }
-    }
+    app = Flask(__name__)
     
-    # 如果任何关键组件不可用，则整体状态为不健康
-    if not vector_retrieval.initialized or not (DATA_DIR.exists() and os.access(DATA_DIR, os.W_OK)):
-        health_data["status"] = "unhealthy"
+    # 启用CORS支持
+    CORS(app)
     
-    return jsonify(health_data)
-
-# 系统信息端点
-@app.route('/system-info')
-def system_info():
-    """获取系统配置信息"""
+    # 配置应用
+    app.config['JSON_AS_ASCII'] = False  # 支持中文JSON响应
+    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key')
+    
+    # 注册查询API路由
     try:
-        from app.data_indexing.index_creator import IndexCreatorFactory
-        from app.data_source.vector.factory import VectorStoreFactory 
-        from app.data_source.full_text.factory import FullTextStoreFactory
-        
-        factories = {
-            "vector_store_type": VECTOR_STORE_TYPE,
-            "fulltext_store_type": FULLTEXT_STORE_TYPE,
-            "vector_store": VectorStoreFactory.create().__class__.__name__,
-            "fulltext_store": FullTextStoreFactory.create().__class__.__name__,
-        }
-        
-        # 尝试创建索引创建器，如果可能
-        try:
-            factories.update({
-                "vector_creator": IndexCreatorFactory.create("vector").__class__.__name__,
-                "fulltext_creator": IndexCreatorFactory.create("fulltext").__class__.__name__,
-                "hybrid_creator": IndexCreatorFactory.create("hybrid").__class__.__name__,
-            })
-        except Exception as e:
-            factories["creator_error"] = str(e)
-            
+        query_api = init_query_routes(app)
+        logger.info("查询API路由注册成功")
+    except Exception as e:
+        logger.error(f"查询API路由注册失败: {str(e)}")
+        raise
+    
+    # 注册数据API路由
+    try:
+        data_api = init_data_routes(app)
+        logger.info("数据API路由注册成功")
+    except Exception as e:
+        logger.error(f"数据API路由注册失败: {str(e)}")
+        raise
+    
+    # 注册Dify集成API路由
+    try:
+        if query_api:  # 只有在QueryAPI成功初始化时才初始化Dify集成
+            dify_api_key = os.getenv('DIFY_API_KEY', 'your-dify-api-key')
+            init_dify_integration(app, dify_api_key, query_api)
+            logger.info("Dify集成API路由注册成功")
+        else:
+            logger.warning("QueryAPI未成功初始化，跳过Dify集成")
+    except Exception as e:
+        logger.error(f"Dify集成API路由注册失败: {str(e)}")
+        # Dify集成失败不应该阻止整个应用启动
+        logger.warning("Dify集成不可用，应用将继续运行")
+    
+    # 添加健康检查接口
+    @app.route('/health', methods=['GET'])
+    def health_check():
+        """健康检查接口"""
         return jsonify({
-            "vector_store_type": VECTOR_STORE_TYPE,
-            "fulltext_store_type": FULLTEXT_STORE_TYPE,
-            "data_dir": str(DATA_DIR),
-            "factories": factories
+            "status": "healthy",
+            "message": "RAG查询服务运行正常",
+            "version": "1.0.0"
         })
+    
+    # 添加根路径接口
+    @app.route('/', methods=['GET'])
+    def root():
+        """根路径接口"""
+        return jsonify({
+            "message": "欢迎使用RAG查询服务",
+            "version": "1.0.0",
+            "endpoints": {
+                "查询": {
+                    "POST /api/query": "执行详细查询",
+                    "GET /api/query": "执行简单查询",
+                    "GET /api/query/modes": "获取可用查询模式"
+                },
+                "数据管理": {
+                    "POST /api/data/upload": "上传单个文档",
+                    "POST /api/data/batch_upload": "批量上传文档",
+                    "POST /api/data/import": "从目录导入文档",
+                    "DELETE /api/data/delete": "删除文档",
+                    "GET /api/data/list": "查询文档列表",
+                    "GET /api/data/stats": "获取数据统计",
+                    "GET /api/data/document/{file_id}": "获取文档信息",
+                    "GET /api/data/download/{file_id}": "下载文档"
+                },
+                "Dify集成": {
+                    "POST /retrieval": "Dify外部知识库检索接口",
+                    "GET /dify/health": "Dify集成健康检查"
+                },
+                "系统": {
+                    "GET /health": "健康检查",
+                    "GET /": "服务信息"
+                }
+            },
+            "usage_examples": {
+                "内部查询示例": {
+                    "url": "/api/query",
+                    "method": "POST",
+                    "body": {
+                        "query": "什么是人工智能？",
+                        "top_k": 5,
+                        "mode": "vector",
+                        "enable_pre_processing": True,
+                        "enable_post_processing": True
+                    }
+                },
+                "Dify集成示例": {
+                    "url": "/retrieval",
+                    "method": "POST",
+                    "headers": {
+                        "Authorization": "Bearer your-api-key",
+                        "Content-Type": "application/json"
+                    },
+                    "body": {
+                        "knowledge_id": "AAA-BBB-CCC",
+                        "query": "什么是人工智能？",
+                        "retrieval_setting": {
+                            "top_k": 5,
+                            "score_threshold": 0.5
+                        }
+                    }
+                },
+                "GET查询示例": {
+                    "url": "/api/query?q=人工智能&top_k=5&mode=vector",
+                    "method": "GET"
+                },
+                "文档上传示例": {
+                    "url": "/api/data/upload",
+                    "method": "POST",
+                    "headers": {
+                        "Content-Type": "multipart/form-data"
+                    },
+                    "body": {
+                        "file": "文件对象",
+                        "split_strategy": "sentence",
+                        "chunk_size": "500",
+                        "chunk_overlap": "50",
+                        "metadata": "{\"category\": \"技术文档\"}"
+                    }
+                },
+                "目录导入示例": {
+                    "url": "/api/data/import",
+                    "method": "POST",
+                    "headers": {
+                        "Content-Type": "application/json"
+                    },
+                    "body": {
+                        "directory_path": "/path/to/documents",
+                        "recursive": True,
+                        "file_pattern": "*.pdf",
+                        "split_strategy": "sentence",
+                        "chunk_size": 500,
+                        "chunk_overlap": 50,
+                        "metadata": {"source": "external_docs"}
+                    }
+                }
+            }
+        })
+    
+    # 错误处理
+    @app.errorhandler(404)
+    def not_found(error):
+        """404错误处理"""
+        return jsonify({
+            "success": False,
+            "message": "请求的资源不存在",
+            "error_code": 404
+        }), 404
+    
+    @app.errorhandler(500)
+    def internal_error(error):
+        """500错误处理"""
+        logger.error(f"内部服务器错误: {str(error)}")
+        return jsonify({
+            "success": False,
+            "message": "内部服务器错误",
+            "error_code": 500
+        }), 500
+    
+    return app
+
+def main():
+    """主函数"""
+    try:
+        # 创建应用
+        app = create_app()
+        
+        # 获取配置
+        host = os.getenv('FLASK_HOST', '0.0.0.0')
+        port = int(os.getenv('FLASK_PORT', 5001))
+        debug = os.getenv('FLASK_DEBUG', 'True').lower() == 'true'
+        
+        logger.info(f"启动RAG查询服务...")
+        logger.info(f"服务地址: http://{host}:{port}")
+        logger.info(f"调试模式: {debug}")
+        logger.info(f"主要接口:")
+        logger.info(f"  查询接口:")
+        logger.info(f"    - POST http://{host}:{port}/api/query")
+        logger.info(f"    - GET  http://{host}:{port}/api/query?q=查询内容")
+        logger.info(f"    - GET  http://{host}:{port}/api/query/modes")
+        logger.info(f"  数据管理接口:")
+        logger.info(f"    - POST http://{host}:{port}/api/data/upload")
+        logger.info(f"    - POST http://{host}:{port}/api/data/batch_upload")
+        logger.info(f"    - POST http://{host}:{port}/api/data/import")
+        logger.info(f"    - DELETE http://{host}:{port}/api/data/delete")
+        logger.info(f"    - GET  http://{host}:{port}/api/data/list")
+        logger.info(f"    - GET  http://{host}:{port}/api/data/stats")
+        logger.info(f"    - GET  http://{host}:{port}/api/data/document/{{file_id}}")
+        logger.info(f"    - GET  http://{host}:{port}/api/data/download/{{file_id}}")
+        logger.info(f"  集成接口:")
+        logger.info(f"    - POST http://{host}:{port}/retrieval (Dify集成)")
+        logger.info(f"    - GET  http://{host}:{port}/dify/health")
+        logger.info(f"  系统接口:")
+        logger.info(f"    - GET  http://{host}:{port}/health")
+        
+        # 启动服务
+        app.run(
+            host=host,
+            port=port,
+            debug=debug,
+            threaded=True  # 启用多线程支持
+        )
         
     except Exception as e:
-        return jsonify({
-            "error": f"获取系统信息失败: {str(e)}"
-        }), 500
+        logger.error(f"应用启动失败: {str(e)}")
+        raise
 
-# 处理404错误
-@app.errorhandler(404)
-def not_found(e):
-    return jsonify({"success": False, "message": "请求的端点不存在"}), 404
-
-# 处理500错误
-@app.errorhandler(500)
-def server_error(e):
-    return jsonify({"success": False, "message": "服务器内部错误"}), 500
-
-# 启动应用
-if __name__ == "__main__":
-    # 检查环境变量
-    check_required_env_vars()
-    
-    # 获取端口
-    port = int(os.environ.get("PORT", 5000))
-    
-    # 数据库连接状态
-    if not vector_retrieval.initialized:
-        print("\n警告: 数据库连接失败。")
-        print("将在没有向量检索功能的情况下启动服务。")
-        print("提示: 请检查数据库配置并确保数据库服务已启动。\n")
-    else:
-        print("\n数据库连接成功，所有功能正常运行。\n")
-    
-    # 启动服务
-    app.run(host="0.0.0.0", port=port, debug=True) 
+if __name__ == '__main__':
+    main() 

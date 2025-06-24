@@ -161,31 +161,3 @@ class ChatModelFactory:
 
 def get_chat_model() -> BaseChatModel:
     return ChatModelFactory.create()
-
-
-if __name__ == "__main__":
-    test_msgs = [
-        {"role": "system", "content": "你是一个智能助手，可以帮助用户解答问题。"},
-        {"role": "user", "content": "请介绍一下中国的首都北京。"}
-    ]
-
-    import os
-
-    os.environ["CHAT_MODEL_TYPE"] = "aliyun"
-
-    print("\n使用阿里云聊天模型进行测试:")
-    try:
-        test_model = AliyunChatModel()
-        print(f"模型类型: {test_model.__class__.__name__}, 模型名称: {test_model.model_name}")
-
-        reply = test_model.chat(test_msgs)
-        print("\n模型回复:")
-        print(reply)
-
-        test_prompt = "请用一句话介绍人工智能。"
-        print(f"\n使用提示词: '{test_prompt}'")
-        generation = test_model.generate(test_prompt)
-        print("生成结果:")
-        print(generation)
-    except Exception as e:
-        print(f"测试失败: {e}")

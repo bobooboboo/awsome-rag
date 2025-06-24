@@ -1,14 +1,9 @@
 import os
+
 from dotenv import load_dotenv
-from pathlib import Path
 
 # 加载环境变量
 load_dotenv()
-
-# 基础路径配置
-BASE_DIR = Path(__file__).parent.parent.parent.absolute()
-DATA_DIR = BASE_DIR / "data"
-SAMPLE_DIR = DATA_DIR / "samples"
 
 # 向量库类型配置
 VECTOR_STORE_TYPE = os.getenv("VECTOR_STORE_TYPE", "pg_vector")
@@ -62,11 +57,11 @@ MILVUS_FULLTEXT_CONFIG = {
 }
 
 # 嵌入模型配置
-EMBED_MODEL_TYPE = os.getenv("EMBED_MODEL_TYPE", "aliyun")  # 使用阿里云嵌入模型
+EMBED_MODEL_TYPE = os.getenv("EMBED_MODEL_TYPE", "local")  # 使用阿里云嵌入模型
 
 # 本地嵌入模型配置
 LOCAL_EMBED_MODEL_CONFIG = {
-    "model_name": os.getenv("LOCAL_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2"),
+    "model_name": os.getenv("LOCAL_EMBED_MODEL", "dengcao/Qwen3-Embedding-8B:Q5_K_M")
 }
 
 # 阿里云百炼嵌入模型配置
@@ -80,7 +75,7 @@ RERANK_MODEL_TYPE = os.getenv("RERANK_MODEL_TYPE", "local")  # 重排模型类�
 
 # 本地重排模型配置
 LOCAL_RERANK_MODEL_CONFIG = {
-    "model_name": os.getenv("LOCAL_RERANK_MODEL", "BAAI/bge-reranker-large"),
+    "model_name": os.getenv("LOCAL_RERANK_MODEL", "dengcao/Qwen3-Reranker-8B:Q5_K_M"),
     "top_n": int(os.getenv("RERANK_TOP_N", "5"))
 }
 
@@ -124,4 +119,13 @@ DOC_PROCESSING_CONFIG = {
 QUERY_CONFIG = {
     "similarity_top_k": 5,
     "response_mode": "compact",
-} 
+}
+
+# 默认检索模式: vector, text, hybrid, sparse, semantic_hybrid
+DEFAULT_SEARCH_MODE = os.getenv("DEFAULT_SEARCH_MODE", "vector")
+
+# 存储配置
+STORING_CONFIG = {
+    "persist_dir": os.getenv("PERSIST_DIR", "~/storage"),
+    "upload_dir": os.getenv("UPLOAD_DIR", "~/storage/uploads"),  # 文档上传存储目录
+}

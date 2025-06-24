@@ -39,6 +39,7 @@ if __name__ == '__main__':
     # 查询前置处理
     optimized_query = LlamaIndexQueryTransformAdapter().chain.run("敏感词中国汽车品牌")
 
+    LlamaIndexQueryTransformAdapter().run()
     print(optimized_query)
 
     # 构建query_bundle

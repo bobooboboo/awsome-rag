@@ -1,54 +1,60 @@
 from pathlib import Path
-from typing import List, Optional, Union
-from llama_index.readers.file import PyMuPDFReader
+from typing import List
+
 from llama_index.core import Document
+from llama_index.readers.file import DocxReader, PDFReader, HTMLTagReader, MarkdownReader, UnstructuredReader, \
+    PandasExcelReader, CSVReader
+
 
 class LocalFileLoader:
     """
     本地文件加载器，使用PyMuPDF加载本地PDF文件
     """
-    
+
     def __init__(self):
         """初始化本地文件加载器"""
-        self.pdf_reader = PyMuPDFReader()
-    
-    def load_pdf(self, file_path: Union[str, Path]) -> List[Document]:
-        """
-        加载PDF文件
-        
-        Args:
-            file_path: PDF文件路径
-            
-        Returns:
-            Document对象列表
-        """
-        return self.pdf_reader.load_data(file_path)
-    
-    def load_documents(self, file_paths: List[Union[str, Path]]) -> List[Document]:
+        self.doc_reader = DocxReader()
+        self.pdf_reader = PDFReader(return_full_document=True)
+        self.html_reader = HTMLTagReader()
+        self.markdown_reader = MarkdownReader()
+        self.default_reader = UnstructuredReader()
+        self.excel_reader = PandasExcelReader()
+        self.csv_reader = CSVReader()
+
+    def load_documents(self, file_path: str) -> List[Document]:
         """
         加载多个文档文件
         
         Args:
-            file_paths: 文件路径列表
+            file_path: 文件路径
             
         Returns:
             Document对象列表
         """
-        documents = []
-        
-        for file_path in file_paths:
-            file_path = Path(file_path)
-            
-            if not file_path.exists():
-                print(f"警告: 文件不存在 - {file_path}")
-                continue
-            
-            if file_path.suffix.lower() == '.pdf':
-                # 处理PDF文件
-                docs = self.load_pdf(file_path)
-                documents.extend(docs)
-            else:
-                # 提示不支持的文件类型
-                print(f"警告: 不支持的文件类型 - {file_path}")
-        
-        return documents 
+        file_type = file_path.split('.')[-1]
+        if file_type in ['docx', 'doc']:
+            return self.doc_reader.load_data(file=Path(file_path))
+        elif file_type == 'pdf':
+            return self.pdf_reader.load_data(file=Path(file_path))
+        elif file_type in ['html', 'htm']:
+            return self.html_reader.load_data(file=Path(file_path))
+        elif file_type in ['markdown', 'md']:
+            return self.markdown_reader.load_data(file=file_path)
+        elif file_type in ["txt", "text"]:
+            with open(file_path, 'r', encoding="utf-8") as f:
+                return [Document(text=f.read())]
+        elif file_type in ['csv']:
+            return self.csv_reader.load_data(file=Path(file_path))
+        elif file_type in ['xls', 'xlsx']:
+            return self.excel_reader.load_data(file=Path(file_path))
+        else:
+            return self.default_reader.load_data(file=Path(file_path))
+
+# if __name__ == '__main__':
+#     filenames = os.listdir("/Users/boboo/Documents/法规文件")
+#     loader = LocalFileLoader()
+#     for filename in filenames:
+#         if filename.endswith("DS_Store"):
+#             continue
+#         documents = loader.load_documents(f"/Users/boboo/Documents/法规文件/{filename}")
+#         print(documents)
